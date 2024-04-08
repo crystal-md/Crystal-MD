@@ -74,6 +74,9 @@ private:
     // resolve "dump" in stages section in yaml config file.
     bool resolveStageDump(Stage *stage, const YAML::Node &yaml_stage_dump);
 
+    // resolve "thermo_logs" field in stage section in yaml config file.
+    bool resolveStageThermoLogs(Stage *stage, const YAML::Node &yaml_thermo_logs);
+
     // resolve "velocity" in stages section in yaml config file.
     bool resolveConfigVelocity(Stage *stage, const YAML::Node &yaml_velocity);
 
@@ -82,6 +85,9 @@ private:
 
     // resolve "output.atom_dump.presets" section in yaml config file.
     bool parseDumpPresets(const YAML::Node &yaml_atom_dump);
+
+    // resolve "output.thermo.presets" section in yaml config file.
+    bool parseThermoPresets(const YAML::Node &yaml_atom_dump);
 
     // resolve "rescale" in stages section in yaml config file.
     bool resolveConfigRescale(Stage *stage, const YAML::Node &yaml_rescale);

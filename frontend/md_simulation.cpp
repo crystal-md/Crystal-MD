@@ -107,6 +107,13 @@ void MDSimulation::beforeStep(const unsigned short potentialType,const unsigned 
                                                 _p_domain->phase_space[2];
         configuration::rescale(current_stage.rescale_t, n_global_atoms, _atom->atom_list, _atom->inter_atom_list);
     }
+    // log thermodynamic
+    // todo: use the same (cur_stage_steps +1)
+    if (current_stage.thermo_logs_set && (cur_stage_steps + 1) % current_stage.thermo_logs_every_steps == 0) {
+        runtime_status.flag_calc_system_potential_energy = true;
+    } else {
+        runtime_status.flag_calc_system_potential_energy = false;
+    }
 }
 
 void MDSimulation::postStep(const unsigned long step) {
@@ -125,15 +132,8 @@ void MDSimulation::postStep(const unsigned long step) {
         }
     }
 
-    // output thermodynamics information if it it the step
-    if (pConfigVal->output.thermo_interval && (step + 1) % pConfigVal->output.thermo_interval == 0) {
-        const double e = configuration::kineticEnergy(_atom->getAtomList(), _atom->getInterList(),
-                                                      configuration::ReturnMod::Root, MASTER_PROCESSOR);
-        const _type_atom_count n = 2 * pConfigVal->phaseSpace[0] *
-                                   pConfigVal->phaseSpace[1] * pConfigVal->phaseSpace[2];
-        const double T = configuration::temperature(e, n);
-        kiwi::logs::i(MASTER_PROCESSOR, "energy", "kinetic energy = {}, T = {}.\n", e, T);
-    }
+    // output thermodynamics information if it is the step
+    log_thermodynamics(current_stage, cur_stage_steps, step, phy_time);
 
 #ifdef MD_RUNTIME_CHECKING
     {
@@ -148,6 +148,50 @@ void MDSimulation::postStep(const unsigned long step) {
         kiwi::logs::d(MASTER_PROCESSOR, "count", "global_real:{}--global_inter: {}\n", real_atoms, inter_atoms);
     }
 #endif
+}
+
+void MDSimulation::log_thermodynamics(const Stage stage, const unsigned long cur_stage_step,
+                                      const unsigned long global_step, const double phy_time) {
+    if (current_stage.thermo_logs_set && cur_stage_steps % current_stage.thermo_logs_every_steps == 0) {
+        // find by `use`
+        md_thermodynamic::OutputThermodynamic preset;
+        for (md_thermodynamic::OutputThermodynamic p: pConfigVal->output.thermo_presets) {
+            if (p.name == current_stage.thermo_logs_preset_use) {
+                preset = p;
+                break;
+            }
+        }
+
+        std::stringstream ss;
+        // time and step:
+        if ((preset.flags & md_thermodynamic::WithStepMask) != 0) {
+            ss << " step: " << global_step;
+        }
+        if ((preset.flags & md_thermodynamic::WithTimeMask) != 0) {
+            ss << " phy_time: " << phy_time;
+        }
+
+        if ((preset.flags & md_thermodynamic::WithKineticEnergyMask) != 0 ||
+            (preset.flags & md_thermodynamic::WithTemperatureMask) != 0) {
+            const double ke = configuration::kineticEnergy(_atom->getAtomList(), _atom->getInterList(),
+                                                           configuration::ReturnMod::Root, MASTER_PROCESSOR);
+            if ((preset.flags & md_thermodynamic::WithKineticEnergyMask) != 0) {
+                ss << " kinetic energy: " << ke;
+            }
+            if ((preset.flags & md_thermodynamic::WithTemperatureMask) != 0) {
+                const _type_atom_count n = 2 * pConfigVal->phaseSpace[0] *
+                                           pConfigVal->phaseSpace[1] * pConfigVal->phaseSpace[2];
+                const double T = configuration::temperature(ke, n);
+                ss << " temperature: " << T;
+            }
+        }
+        if ((preset.flags & md_thermodynamic::WithPotentialEnergyMask) != 0) {
+            double pot_energy = _atom->get_system_pot_energy();
+            ss << " potential energy: " << pot_energy;
+        }
+        // write buffer
+        kiwi::logs::i(MASTER_PROCESSOR, "thermo", "{}\n", ss.str());
+    }
 }
 
 void MDSimulation::onForceSolved(const unsigned long step) {

@@ -95,6 +95,15 @@ private:
 
 #endif
 
+    /**
+     * log thermodynamics information to standard output if it is the step
+     * @param stage current stage
+     * @param cur_stage_step current stage step
+     * @param global_step current global step
+     * @param phy_time physics time
+     */
+    void log_thermodynamics(const Stage stage, const unsigned long cur_stage_step,
+                            const unsigned long global_step, const double phy_time);
 };
 
 

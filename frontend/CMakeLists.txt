@@ -25,6 +25,7 @@ set(HEADER_FILES
 
 set(SOURCE_FILES
         config_values.cpp
+        config_values_thermodynamic.hpp
         misa_md.cpp
         config_parser.cpp
         main.cpp

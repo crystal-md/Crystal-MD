@@ -122,21 +122,32 @@ void atom::clearForce() {
     }
 }
 
-void atom::computeEamWrapper(const unsigned short pot_type, eam *pot, double &comm) {
+void atom::computeEamWrapper(const unsigned short pot_type, bool calc_pot_energy, eam *pot, double &comm) {
     if (pot_type == EAM_STYLE_ALLOY) {
-        computeEam<EAM_STYLE_ALLOY>(pot, comm);
+        if (calc_pot_energy) {
+            computeEam<EAM_STYLE_ALLOY, true>(pot, comm);
+        } else {
+            computeEam<EAM_STYLE_ALLOY, false>(pot, comm);
+        }
     } else if (pot_type == EAM_STYLE_FS) {
-        computeEam<EAM_STYLE_FS>(pot, comm);
+        if (calc_pot_energy) {
+            computeEam<EAM_STYLE_FS, true>(pot, comm);
+        } else {
+            computeEam<EAM_STYLE_FS, false>(pot, comm);
+        }
     } else {
         kiwi::logs::e("eam", "unsupported potential type\n");
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 }
 
-template<int POT_TYPE>
+template<int POT_TYPE, bool CALC_SYS_POT_ENERGY>
 void atom::computeEam(eam *pot, double &comm) {
     double starttime, stoptime;
     inter_atom_list->makeIndex(atom_list, p_domain); // create index for inter atom and inter ghost atoms.
+
+    system_total_embed = 0.0;
+    system_total_pair = 0.0;
 
     latRho<POT_TYPE>(pot);
     interRho<POT_TYPE>(pot);
@@ -153,7 +164,7 @@ void atom::computeEam(eam *pot, double &comm) {
     }
 
     //本地晶格点计算嵌入能导数
-    latDf(pot);
+    latDf<CALC_SYS_POT_ENERGY>(pot);
 
     {
         // 发送嵌入能导数
@@ -168,10 +179,10 @@ void atom::computeEam(eam *pot, double &comm) {
     }
 
     // force for local lattice.
-    latForce(pot);
+    latForce<CALC_SYS_POT_ENERGY>(pot);
 
     //间隙原子计算嵌入能和对势带来的力
-    interForce(pot);
+    interForce<CALC_SYS_POT_ENERGY>(pot);
 
     // send force
     starttime = MPI_Wtime();
@@ -182,9 +193,13 @@ void atom::computeEam(eam *pot, double &comm) {
     comm += stoptime - starttime;
 }
 
-template void atom::computeEam<EAM_STYLE_ALLOY>(eam *pot, double &comm);
+template void atom::computeEam<EAM_STYLE_ALLOY, true>(eam *pot, double &comm);
 
-template void atom::computeEam<EAM_STYLE_FS>(eam *pot, double &comm);
+template void atom::computeEam<EAM_STYLE_ALLOY, false>(eam *pot, double &comm);
+
+template void atom::computeEam<EAM_STYLE_FS, true>(eam *pot, double &comm);
+
+template void atom::computeEam<EAM_STYLE_FS, false>(eam *pot, double &comm);
 
 template<int POT_TYPE>
 void atom::latRho(eam *pot) {
@@ -376,6 +391,7 @@ void atom::interRho(eam *pot) {
     }
 }
 
+template<bool WITH_ENERGY>
 void atom::latDf(eam *pot) {
     double dfEmbed;
     const int xstart = p_domain->dbx_lattice_size_ghost[0];
@@ -398,12 +414,19 @@ void atom::latDf(eam *pot) {
                     dfEmbed = pot->dEmbedEnergy(atom_type::getTypeIdByType(MD_GET_ATOM_TYPE(atom_, gid)),
                                                 MD_GET_ATOM_RHO(atom_, gid));
                     MD_SET_ATOM_DF(atom_, gid, dfEmbed);
+                    // embed energy
+                    if (WITH_ENERGY) {
+                        system_total_embed += pot->embedEnergy(atom_type::getTypeIdByType(MD_GET_ATOM_TYPE(atom_, gid)),
+                                                               MD_GET_ATOM_RHO(atom_, gid),
+                                                               MD_GET_ATOM_RHO(atom_, gid) + 0.1);
+                    }
                 }
             }
         }
     }
 }
 
+template<bool WITH_ENERGY>
 void atom::latForce(eam *pot) {
     double delx, dely, delz;
     double dist2;
@@ -449,6 +472,17 @@ void atom::latForce(eam *pot) {
                             MD_ADD_ATOM_F(atom_n, nei_id, 0, -delx * fpair);
                             MD_ADD_ATOM_F(atom_n, nei_id, 1, -dely * fpair);
                             MD_ADD_ATOM_F(atom_n, nei_id, 2, -delz * fpair);
+
+                            if (WITH_ENERGY) {
+                                system_total_pair += pot->pairPotential(
+                                        atom_type::getTypeIdByType(MD_GET_ATOM_TYPE(atom_, gid)),
+                                        atom_type::getTypeIdByType(MD_GET_ATOM_TYPE(atom_n, nei_id)),
+                                        dist2);
+                                system_total_pair += pot->pairPotential(
+                                        atom_type::getTypeIdByType(MD_GET_ATOM_TYPE(atom_n, nei_id)),
+                                        atom_type::getTypeIdByType(MD_GET_ATOM_TYPE(atom_, gid)),
+                                        dist2);
+                            }
                         }
                     }
                 }
@@ -457,6 +491,7 @@ void atom::latForce(eam *pot) {
     } // end of if-isArchAccSupport.
 }
 
+template<bool WITH_ENERGY>
 void atom::interForce(eam *pot) {
     double delx, dely, delz;
     double dist2;
@@ -494,6 +529,17 @@ void atom::interForce(eam *pot) {
             MD_ADD_ATOM_F(atom_central, _atom_near_index, 0, -delx * fpair);
             MD_ADD_ATOM_F(atom_central, _atom_near_index, 1, -dely * fpair);
             MD_ADD_ATOM_F(atom_central, _atom_near_index, 2, -delz * fpair);
+
+            if (WITH_ENERGY) {
+                system_total_pair += pot->pairPotential(
+                        atom_type::getTypeIdByType((*inter_it).type),
+                        atom_type::getTypeIdByType(MD_GET_ATOM_TYPE(atom_central, _atom_near_index)),
+                        dist2);
+                system_total_pair += pot->pairPotential(
+                        atom_type::getTypeIdByType(MD_GET_ATOM_TYPE(atom_central, _atom_near_index)),
+                        atom_type::getTypeIdByType((*inter_it).type),
+                        dist2);
+            }
         }
 
         _type_atom_index x, y, z;
@@ -521,6 +567,17 @@ void atom::interForce(eam *pot) {
                 MD_ADD_ATOM_F(lattice_neighbour, nei_atom_inx, 0, -delx * fpair);
                 MD_ADD_ATOM_F(lattice_neighbour, nei_atom_inx, 1, -dely * fpair);
                 MD_ADD_ATOM_F(lattice_neighbour, nei_atom_inx, 2, -delz * fpair);
+
+                if (WITH_ENERGY) {
+                    system_total_pair += pot->pairPotential(
+                            atom_type::getTypeIdByType((*inter_it).type),
+                            atom_type::getTypeIdByType(MD_GET_ATOM_TYPE(lattice_neighbour, nei_atom_inx)),
+                            dist2);
+                    system_total_pair += pot->pairPotential(
+                            atom_type::getTypeIdByType(MD_GET_ATOM_TYPE(lattice_neighbour, nei_atom_inx)),
+                            atom_type::getTypeIdByType((*inter_it).type),
+                            dist2);
+                }
             }
         }
         // force contribution of neighbour atoms in the same bucket.
@@ -544,6 +601,13 @@ void atom::interForce(eam *pot) {
                     (*inter_it).f[0] += delx * fpair;
                     (*inter_it).f[1] += dely * fpair;
                     (*inter_it).f[2] += delz * fpair;
+
+                    if (WITH_ENERGY) {
+                        system_total_pair += pot->pairPotential(
+                                atom_type::getTypeIdByType((*inter_it).type),
+                                atom_type::getTypeIdByType(bucket_nei_itl->second->type),
+                                dist2);
+                    }
                 }
             }
         }
@@ -569,6 +633,13 @@ void atom::interForce(eam *pot) {
                     (*inter_it).f[0] += delx * fpair;
                     (*inter_it).f[1] += dely * fpair;
                     (*inter_it).f[2] += delz * fpair;
+
+                    if (WITH_ENERGY) {
+                        system_total_pair += pot->pairPotential(
+                                atom_type::getTypeIdByType((*inter_it).type),
+                                atom_type::getTypeIdByType(itl_up->second->type),
+                                dist2);
+                    }
                 }
             }
         }

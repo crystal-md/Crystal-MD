@@ -23,6 +23,10 @@ void Stage::packdata(kiwi::Bundle &bundle) {
     bundle.put(dump_set);
     bundle.put(dump_preset_use);
     bundle.put(dump_every_steps);
+    // thermodynamic logs
+    bundle.put(thermo_logs_set);
+    bundle.put(thermo_logs_preset_use);
+    bundle.put(thermo_logs_every_steps);
     // collision
     bundle.put(collision_set);
     bundle.put(collisionStep);
@@ -47,6 +51,10 @@ void Stage::unnpackdata(int &cursor, kiwi::Bundle &bundle) {
     bundle.get(cursor, dump_set);
     bundle.get(cursor, dump_preset_use);
     bundle.get(cursor, dump_every_steps);
+    // thermodynamic logs
+    bundle.get(cursor, thermo_logs_set);
+    bundle.get(cursor, thermo_logs_preset_use);
+    bundle.get(cursor, thermo_logs_every_steps);
     // collision
     bundle.get(cursor, collision_set);
     bundle.get(cursor, collisionStep);
@@ -156,8 +164,12 @@ void ConfigValues::packdata(kiwi::Bundle &bundle) {
     for (DumpConfig out: output.presets) {
         out.packdata(bundle);
     }
+    // thermodynamic presets in output section
+    bundle.put(output.thermo_presets.size());
+    for (auto preset : output.thermo_presets) {
+        preset.packdata(bundle);
+    }
 
-    bundle.put(output.thermo_interval);
     // logs subsection in output section.
     bundle.put(output.logs_mode);
     bundle.put(output.logs_filename);
@@ -212,7 +224,13 @@ void ConfigValues::unpackdata(kiwi::Bundle &bundle) {
         output.presets[i].unnpackdata(cursor, bundle);
     }
 
-    bundle.get(cursor, output.thermo_interval);
+    // thermodynamic presets in output section
+    std::size_t thermo_preset_size = 0;
+    bundle.get(cursor, thermo_preset_size);
+    output.thermo_presets.resize(thermo_preset_size);
+    for (std::size_t i = 0; i< thermo_preset_size; i++) {
+        output.thermo_presets[i].unnpackdata(cursor, bundle);
+    }
 
     // logs subsection in output section.
     bundle.get(cursor, output.logs_mode);
@@ -273,7 +291,10 @@ std::ostream &operator<<(std::ostream &os, const ConfigValues &cv) {
         os << "output.presets.dump-mask: " << out.dump_mask << std::endl;
         os << "output.presets.whole-system:" << out.dump_whole_system << std::endl;
     }
-    os << "output.thermo.interval:" << cv.output.thermo_interval << std::endl;
+    os << "output.thermo:" << std::endl;
+    for(md_thermodynamic::OutputThermodynamic preset : cv.output.thermo_presets ){
+        os << preset << std::endl;
+    }
     os << "output.logs.mode: "
        << (cv.output.logs_mode == LOGS_MODE_CONSOLE ? LOGS_MODE_CONSOLE_STRING : LOGS_MODE_FILE_STRING)
        << std::endl;

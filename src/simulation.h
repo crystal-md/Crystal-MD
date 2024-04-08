@@ -13,6 +13,14 @@
 #include "newton_motion.h"
 #include "world_builder.h"
 
+struct RuntimeStatus {
+    /**
+     * this flag indicates whether to calculate the system potential energy.
+     * In current implementation, it is reset to true/false in function beforeStep at each step.
+     */
+    bool flag_calc_system_potential_energy = false;
+};
+
 class simulation {
 public:
 
@@ -115,6 +123,12 @@ protected:
      * the time steps the program have simulated.
      */
     unsigned long _simulation_time_step;
+
+    /**
+     * the runtime status.
+     * It can be modified by plugin or in BeforeStep/PostStep callback.
+     */
+    RuntimeStatus runtime_status;
 
     comm::BccDomain *_p_domain;
     // GlobalDomain *p_domain;  //仅rank==0的进程有效 // todo ??

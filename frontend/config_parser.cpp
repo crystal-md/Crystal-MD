@@ -217,6 +217,66 @@ bool ConfigParser::parseConfigPotential(const YAML::Node &yaml_pot) {
     return true;
 }
 
+bool ConfigParser::parseThermoPresets(const YAML::Node &yaml_thermo_dump) {
+    if (!yaml_thermo_dump) {
+        // skip the field "thermo" is ok.
+        return true;
+    }
+
+    const YAML::Node yaml_thermo_preset = yaml_thermo_dump["presets"];
+    if (!yaml_thermo_preset) {
+        // skip "thermo.presets"
+        return true;
+    }
+
+    if (!yaml_thermo_preset.IsSequence()) {
+        setError("`output.thermo.presets` is not correctly set in config file.");
+        return false;
+    }
+    const std::size_t presets_size = yaml_thermo_preset.size();
+
+    for (std::size_t i = 0; i < presets_size; i++) {
+        const YAML::Node yaml_preset = yaml_thermo_preset[i];
+        md_thermodynamic::OutputThermodynamic thermodynamic_config;
+        // parse a preset
+        const YAML::Node yaml_with = yaml_preset["with"];
+        if (!yaml_with) {
+            thermodynamic_config.flags = 0x00;
+        } else {
+            if (!yaml_with.IsSequence()) {
+                setError("\"output.thermo.presets.with\" must be a sequence.");
+                return false;
+            } else {
+                atom_dump::type_dump_mask local_mask = 0;
+                for (auto ele: yaml_with) {
+                    const std::string ele_str = ele.as<std::string>();
+                    if (ele_str == "time") { // current global simulation time
+                        local_mask |= md_thermodynamic::WithTimeMask;
+                    } else if (ele_str == "step") { // current global step
+                        local_mask |= md_thermodynamic::WithStepMask;
+                    } else if (ele_str == "temp") { // temperature
+                        local_mask |= md_thermodynamic::WithTemperatureMask;
+                    } else if (ele_str == "pe") { // potential energy
+                        local_mask |= md_thermodynamic::WithPotentialEnergyMask;
+                    } else if (ele_str == "ke") { // kinetic energy
+                        local_mask |= md_thermodynamic::WithKineticEnergyMask;
+                    } else if (ele_str == "etotal") { // total energy
+                        local_mask |= md_thermodynamic::WithKineticEnergyMask;
+                    } else {
+                        setError("unrecognized value `" + ele_str + "` for \"output.thermo.presets.with\".");
+                        return false;
+                    }
+                }
+                thermodynamic_config.flags = local_mask;
+            }
+        }
+
+        thermodynamic_config.name = yaml_preset["name"].as<std::string>("default");
+        configValues.output.thermo_presets.emplace_back(thermodynamic_config);
+    }
+    return true;
+}
+
 bool ConfigParser::parseDumpPresets(const YAML::Node &yaml_atom_dump) {
     if (!yaml_atom_dump) {
         // skip "atom_dump"
@@ -312,12 +372,15 @@ bool ConfigParser::parseConfigOutput(const YAML::Node &yaml_output) {
     }
 
     // resole thermodynamics config
-    const YAML::Node yaml_thermo = yaml_output["thermo"];
-    if (!yaml_thermo) {
-        setError("thermodynamics output section in config file is not specified.");
+    const YAML::Node yaml_thermo_dump = yaml_output["thermo"];
+    if (yaml_thermo_dump["interval"]) {
+        // error only for compatibility issue in v0.4.0*.
+        setError("`output.thermo.interval` is deprecated now, please use `output.thermo.presets` instead.");
         return false;
     }
-    configValues.output.thermo_interval = yaml_thermo["interval"].as<uint64_t>(0);
+    if (!parseThermoPresets(yaml_thermo_dump)) {
+        return false;
+    }
 
     // resolve logs.
     const YAML::Node yaml_logs = yaml_output["logs"];
@@ -422,6 +485,28 @@ bool ConfigParser::resolveStageDump(Stage *stage, const YAML::Node &yaml_stage_d
     return true;
 }
 
+bool ConfigParser::resolveStageThermoLogs(Stage *stage, const YAML::Node &yaml_thermo_logs) {
+    stage->thermo_logs_preset_use = yaml_thermo_logs["use"].as<std::string>("default");
+    stage->thermo_logs_every_steps = yaml_thermo_logs["every_steps"].as<unsigned int>(0);
+
+    // verify if the specified preset exists.
+    bool found = false;
+    std::size_t index = 0;
+    for (auto &p: configValues.output.thermo_presets) {
+        if (p.name == stage->thermo_logs_preset_use) {
+            found = true;
+            break;
+        }
+        index++;
+    }
+    if (!found) {
+        setError("the thermo_logs preset not found for `" + stage->thermo_logs_preset_use + "`");
+        return false;
+    }
+    configValues.output.thermo_presets[index].steps += stage->steps / stage->thermo_logs_every_steps;
+    return true;
+}
+
 bool ConfigParser::resolveConfigVelocity(Stage *stage, const YAML::Node &yaml_velocity) {
     if (!yaml_velocity) {
         setError("`velocity` config is not set.");
@@ -494,6 +579,15 @@ bool ConfigParser::parseStages(const YAML::Node &yaml_stages) {
             }
         } else {
             stage.dump_set = false;
+        }
+        // thermo_logs
+        if (yaml_stage["thermo_logs"]) {
+            stage.thermo_logs_set = true;
+            if (!resolveStageThermoLogs(&stage, yaml_stage["thermo_logs"])) {
+                return false;
+            }
+        } else {
+            stage.thermo_logs_set = false;
         }
         // velocity
         if (yaml_stage["velocity"]) {

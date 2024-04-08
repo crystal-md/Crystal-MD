@@ -58,7 +58,9 @@ output:
         file_path: "before_collision.{}.out"
         by_frame: true
   thermo:
-    interval: 0 # unsigned integer type, default is 0, no output
+    presets:
+      - name: my_thermo
+        with: [step, time, temp, pe, ke, etotal]
   logs:
     logs_mode: "console" # logs mode, string; values: "console" output will be printed on console/terminal, "file" logs will be saved in files.
     logs_filename: "" # filename of log file, string; if leaving empty, program will generate an unique log filename. (And by default, output will append the end of log file.).
@@ -82,6 +84,9 @@ stages:
     dump: # dump system atom before collision
       use: collision_dump
       every_steps: 1
+    thermo_logs:
+      use: my_thermo
+      every_steps: 2
     set_v:
       collision_step: 2  # unsigned long type, step relative to current stage, not global steps.
       lat: [2, 2, 2, 0]  # int array type

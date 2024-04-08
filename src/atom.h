@@ -36,19 +36,21 @@ public :
 
     /**
      * @tparam POT_TYPE the potential type used for calculation.
+     * @tparam CALC_SYS_POT_ENERGY enable/disable the system potential energy calculation.
      * @param pot pointer of eam potential object
      * @param comm timer for recording communication time.
      */
-    template<int POT_TYPE>
+    template<int POT_TYPE, bool CALC_SYS_POT_ENERGY>
     void computeEam(eam *pot, double &comm);
 
     /**
      * wrapper function to call template function computeEam
      * @param pot_type potential type
+     * @param calc_pot_energy enable/disable the system potential energy calculation
      * @param pot pointer of eam potential object
      * @param comm timer for recording communication time.
      */
-    void computeEamWrapper(const unsigned short pot_type, eam *pot, double &comm);
+    void computeEamWrapper(const unsigned short pot_type, bool calc_pot_energy, eam *pot, double &comm);
 
     /**
      * set velocity of a atom whose position is specified by array @param lat
@@ -74,8 +76,22 @@ public:
               const _type_lattice_coord lat_z, const double v[DIMENSION]);
 
 
+    /**
+     * Note: only master process can get the correct value of system potential energy.
+     * @return system potential energy.
+     */
+    inline double get_system_pot_energy() const {
+        double energy_data_src[2] = {system_total_embed, system_total_pair};
+        double energy_data_dest[2] = {0.0, 0.0};
+        MPI_Reduce(energy_data_src, energy_data_dest, 2, MPI_DOUBLE, MPI_SUM, MASTER_PROCESSOR, MPI_COMM_WORLD);
+        return energy_data_dest[1] / 2 + energy_data_dest[0];
+    }
+
 private:
     comm::BccDomain *p_domain;
+
+    double system_total_embed = 0.0;
+    double system_total_pair = 0.0;
 
     /**
      * calculate electron density for all lattice atoms.
@@ -95,20 +111,29 @@ private:
 
     /**
      * calculate derivative of embedded energy for all lattice atoms.
+     * @tparam WITH_ENERGY this template parameter determines whether or not
+     * the embedded energy is calculated.
      * @param pot pointer of eam potential object.
      */
+    template<bool WITH_ENERGY = false>
     void latDf(eam *pot);
 
     /**
-     * calculate force for all lattice atoms.
+     * calculate force (or also with pair potential) for all lattice atoms.
+     * @tparam WITH_ENERGY this template parameter determines whether or not
+     * the pair potential energy is calculated.
      * @param pot pointer of eam potential object.
      */
+    template<bool WITH_ENERGY = false>
     void latForce(eam *pot);
 
     /**
      * calculate force for all interstitial atoms.
+     * @tparam WITH_ENERGY this template parameter determines whether or not
+     * the pair potential energy is calculated.
      * @param pot pointer of eam potential object.
      */
+    template<bool WITH_ENERGY = false>
     void interForce(eam *pot);
 };
 
