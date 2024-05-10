@@ -75,8 +75,11 @@ MPI_Datatype atom_dump::registerAtomDumpMPIDataType(const type_dump_mask mask) {
     MPI_TYPE_OP_CHECK(MPI_Type_create_struct(3, block_lengths, offsets, types, &l_mpi_dump_type))
     MPI_TYPE_OP_CHECK(MPI_Type_commit(&l_mpi_dump_type))
 
-    mpi_dump_types[mask] = l_mpi_dump_type;
-    return l_mpi_dump_type;
+    MPI_Datatype ext_l_mpi_dump_type = MPI_DATATYPE_NULL;
+    MPI_TYPE_OP_CHECK(MPI_Type_create_resized(l_mpi_dump_type, 0, sizeof(atom_dump::AtomInfoDump), &ext_l_mpi_dump_type));
+
+    mpi_dump_types[mask] = ext_l_mpi_dump_type;
+    return ext_l_mpi_dump_type;
 }
 
 MPI_Datatype atom_dump::registerFrameMetaMPIDataType() {
