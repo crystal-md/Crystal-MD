@@ -16,7 +16,8 @@ simulation:
   def_timesteps_length: 0.001
 
 potential:
-  type: "setfl"
+  format: "setfl"
+  type: "eam/alloy"
   file_path: "FeCuNi.eam.alloy"
 
 creation:
@@ -25,19 +26,21 @@ creation:
   create_seed: 466953
   alloy:
     create_seed: 1024
-    ratio:
-      Fe: 97
-      Cu: 2
-      Ni: 1
+    types:
+      - name: Fe
+        mass: 55.845
+        weight: 97
+      - name: Cu
+        mass: 63.546
+        weight: 2
+      - name: Ni
+        mass: 58.6934
+        weight: 1
 output:
-  dump:
-    atoms_dump_mode: "copy"
-    atoms_dump_file_path: "misa_mdl.{}.out"
-    origin_dump_path: "misa_mdl.origin.out"
-    atoms_dump_interval: 10
-    by_frame: true
   thermo:
-    interval: 0
+    presets:
+      - name: my_thermo
+        with: [step, time, temp, pe, ke, etotal]
   logs:
     logs_mode: "console"
     logs_filename: ""
