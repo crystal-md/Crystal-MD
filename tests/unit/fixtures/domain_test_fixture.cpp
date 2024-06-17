@@ -3,6 +3,7 @@
 //
 
 #include <utils/mpi_utils.h>
+#include <types/atom_types.h>
 #include "domain_test_fixture.h"
 
 comm::BccDomain *DomainFixture::getDomainInstance(int64_t space[3], double lattice_const, double cutoff_radius) {
@@ -24,4 +25,7 @@ comm::BccDomain *DomainFixture::getDomainInstance(int64_t space[3], double latti
 
 void DomainFixture::SetUp() {
     this->p_domain = getDomainInstance(const_cast<int64_t *>(space), lattice_const, cutoff_radius_factor);
+    // create mass
+    std::vector<double> masses = {55.845, 63.546, 58.6934};
+    atom_type::setGlobalAtomMasses(masses);
 }
