@@ -22,6 +22,7 @@ class NeighbourIndex {
 #ifdef ACCELERATE_ENABLED
     // friend function for accessing protected members in arch api: ${ARCH_NAME}_nei_offset_init.
     friend void ARCH_PREFIX(ARCH_NAME, nei_offset_init)(const NeighbourIndex<T> *);
+    friend void ARCH_PREFIX(ARCH_NAME, nei_offset_init_per_gpu)(const NeighbourIndex<T> *);
 #endif
 
 public:
