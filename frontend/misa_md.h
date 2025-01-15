@@ -5,8 +5,7 @@
 #ifndef MISA_MD_H
 #define MISA_MD_H
 
-#include <kiwi_app.h>
-
+#include "kiwi_app.h"
 #include "simulation.h"
 #include "config_parser.h"
 
